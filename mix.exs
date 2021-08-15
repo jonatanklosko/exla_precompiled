@@ -28,26 +28,29 @@ defmodule ExlaPrecompiled.MixProject do
 
   defp aliases do
     [
-      local_exla_sha: &local_exla_sha/1
+      "build.release_tag": &build_release_tag/1,
+      "build.release_nif_filename": &build_release_nif_filename/1,
+      "build.nif_path": &build_nif_path/1
     ]
   end
 
-  defp local_exla_sha(_) do
-    IO.puts(exla_sha_in_project(__DIR__))
+  # Aliases used by the build scripts
+
+  defp build_release_tag(_) do
+    IO.puts(release_tag_for_project(__DIR__))
   end
 
-  defp exla_sha_in_project(project_path) do
-    lock_path = Path.expand("mix.lock", project_path)
-
-    {:%{}, _, entries_ast} =
-      lock_path
-      |> File.read!()
-      |> Code.string_to_quoted!(warn_on_unnecessary_quotes: false)
-
-    {:{}, _, [:git, _url, sha | _]} = entries_ast[:exla]
-
-    sha
+  defp build_release_nif_filename(_) do
+    IO.puts(nif_filename_with_target())
   end
+
+  defp build_nif_path(_) do
+    exla_path = Path.expand("deps/exla/exla", __DIR__)
+    nif_path = Path.join([exla_path, "priv", nif_filename()])
+    IO.puts(nif_path)
+  end
+
+  # ---
 
   defp init() do
     root_project_path = Path.expand("../..", __DIR__)
@@ -56,10 +59,9 @@ defmodule ExlaPrecompiled.MixProject do
     libexla_path = Path.join([exla_path, "priv", nif_filename()])
 
     if File.exists?(exla_path) and not File.exists?(libexla_path) do
-      sha = exla_sha_in_project(root_project_path)
-      tag = "sha/" <> sha
+      tag = release_tag_for_project(root_project_path)
 
-      Mix.shell("No exla binary found locally, trying find one online...")
+      Mix.shell().info("No exla binary found locally, trying find one online...")
 
       case download_binary(tag, libexla_path) do
         :ok ->
@@ -82,6 +84,24 @@ defmodule ExlaPrecompiled.MixProject do
     end
   end
 
+  defp release_tag_for_project(project_path) do
+    sha = exla_sha_in_project(project_path)
+    "sha/" <> sha
+  end
+
+  defp exla_sha_in_project(project_path) do
+    lock_path = Path.expand("mix.lock", project_path)
+
+    {:%{}, _, entries_ast} =
+      lock_path
+      |> File.read!()
+      |> Code.string_to_quoted!(warn_on_unnecessary_quotes: false)
+
+    {:{}, _, [:git, _url, sha | _]} = entries_ast[:exla]
+
+    sha
+  end
+
   defp download_binary(tag, destination_path) do
     repo = "jonatanklosko/exla_precompiled"
     url = "https://github.com/#{repo}/releases/download/#{tag}/#{nif_filename_with_target()}"
@@ -97,7 +117,7 @@ defmodule ExlaPrecompiled.MixProject do
   end
 
   defp nif_filename() do
-    "libexla-.#{nif_ext()}"
+    "libexla.#{nif_ext()}"
   end
 
   defp nif_filename_with_target() do
