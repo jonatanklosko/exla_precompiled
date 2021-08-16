@@ -90,16 +90,9 @@ defmodule ExlaPrecompiled.MixProject do
   end
 
   defp exla_sha_in_project(project_path) do
-    lock_path = Path.expand("mix.lock", project_path)
-
-    {:%{}, _, entries_ast} =
-      lock_path
-      |> File.read!()
-      |> Code.string_to_quoted!(warn_on_unnecessary_quotes: false)
-
-    {:{}, _, [:git, _url, sha | _]} = entries_ast[:exla]
-
-    sha
+    exla_path = Path.join(project_path, "deps/exla")
+    {sha, 0} = System.shell("git rev-parse HEAD", cd: exla_path)
+    String.trim(sha)
   end
 
   defp download_binary(tag, destination_path) do
