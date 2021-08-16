@@ -5,13 +5,48 @@ on:
       - main
 jobs:
   linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
       - uses: erlef/setup-beam@v1
         with:
           otp-version: '24.0'
           elixir-version: '1.12.0'
+      - uses: actions/cache@v2
+        with:
+          path: ~/.cache/bazel
+          key: ${{ runner.os }}
+      - run: mix deps.get
+      - run: .github/scripts/init_release.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        id: init_release
+      # Setup the compilation environment
+      - if: ${{ steps.init_release.outputs.continue == 'true' }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+      - if: ${{ steps.init_release.outputs.continue == 'true' }}
+        run: python -m pip install --upgrade pip numpy
+      - if: ${{ steps.init_release.outputs.continue == 'true' }}
+        uses: abhinavsingh/setup-bazel@v3
+        with:
+          version: '3.7.2'
+      # Build and upload the binary
+      - if: ${{ steps.init_release.outputs.continue == 'true' }}
+        run: mix deps.compile
+        env:
+          CC: gcc-9
+      - if: ${{ steps.init_release.outputs.continue == 'true' }}
+        run: .github/scripts/upload_binary.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  macos:
+    runs-on: macos-10.15
+    steps:
+      - uses: actions/checkout@v2
+      - run: brew install elixir
+      - run: mix local.hex --force
       - run: mix deps.get
       - run: .github/scripts/init_release.sh
         env:
