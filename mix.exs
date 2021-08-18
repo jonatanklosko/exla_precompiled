@@ -2,7 +2,7 @@ defmodule ExlaPrecompiled.MixProject do
   use Mix.Project
 
   def project do
-    if Mix.env() == :prod do
+    if Mix.env() == :prod and not skip?() do
       init()
     end
 
@@ -52,6 +52,10 @@ defmodule ExlaPrecompiled.MixProject do
 
   # ---
 
+  defp skip?() do
+    System.get_env("SKIP_EXLA_PRECOMPILED") == "true"
+  end
+
   defp init() do
     root_project_path = Path.expand("../..", __DIR__)
     deps_path = Path.join(root_project_path, "deps")
@@ -77,9 +81,13 @@ defmodule ExlaPrecompiled.MixProject do
           end
 
         :error ->
+          Mix.shell().info("Couldn't find a matching precompiled exla binary.")
+
           Mix.shell().info(
-            "Couldn't find a matching precompiled exla binary, will need to compile"
+            "You can proceed to regular compilation by setting SKIP_EXLA_PRECOMPILED=true environment variable."
           )
+
+          System.halt()
       end
     end
   end
@@ -103,11 +111,19 @@ defmodule ExlaPrecompiled.MixProject do
   end
 
   defp download(url, dest) do
-    case Mix.shell().cmd("curl --fail -L #{url} > #{dest}") do
-      0 -> :ok
+    command =
+      cond do
+        executable_exists?("curl") -> "curl --fail -L #{url} -o #{dest}"
+        executable_exists?("wget") -> "wget -O #{dest} #{url}"
+      end
+
+    case System.shell(command) do
+      {_, 0} -> :ok
       _ -> :error
     end
   end
+
+  defp executable_exists?(name), do: System.find_executable(name) != nil
 
   defp nif_filename() do
     "libexla.#{nif_ext()}"
@@ -125,14 +141,19 @@ defmodule ExlaPrecompiled.MixProject do
   end
 
   defp target() do
-    case :string.split(:erlang.system_info(:system_architecture), '-', :all) do
-      [cpu, _vendor, os | _] ->
-        os = if List.starts_with?(os, 'darwin'), do: 'darwin', else: os
-        cpu = if os == 'darwin' and List.starts_with?(cpu, 'arm'), do: 'aarch64', else: cpu
-        "#{cpu}-#{os}"
+    erts_version = :erlang.system_info(:version)
 
-      ['win32'] ->
-        "x86_64-windows"
-    end
+    {cpu, os} =
+      :erlang.system_info(:system_architecture)
+      |> List.to_string()
+      |> String.split("-")
+      |> case do
+        ["arm" <> _, _vendor, "darwin" <> _ | _] -> {"aarch64", "darwin"}
+        [cpu, _vendor, "darwin" <> _ | _] -> {cpu, "darwin"}
+        [cpu, _vendor, os | _] -> {cpu, os}
+        ["win32"] -> {"x86_64", "windows"}
+      end
+
+    "#{cpu}-#{os}-erts-#{erts_version}"
   end
 end
