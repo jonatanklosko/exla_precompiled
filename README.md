@@ -27,7 +27,9 @@ both `nx` and `exla` listed.
 ## Limitations
 
 Currently the binaries are built only for Linux x86_64 and macOS x86_64,
-in both cases targeting the CPU.
+in both cases targeting the CPU. Also, the build always uses the latest
+ERTS version, so you will need to have a matching one locally (if that's
+not the case, you will get a friendly error message).
 
 ## How it works
 
