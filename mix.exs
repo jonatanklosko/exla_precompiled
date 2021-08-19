@@ -1,6 +1,8 @@
 defmodule ExlaPrecompiled.MixProject do
   use Mix.Project
 
+  @github_repo "jonatanklosko/exla_precompiled"
+
   def project do
     if Mix.env() == :prod and not skip?() do
       init()
@@ -64,32 +66,60 @@ defmodule ExlaPrecompiled.MixProject do
 
     if File.exists?(exla_path) and not File.exists?(libexla_path) do
       tag = release_tag_for_project(root_project_path)
+      expected_filename = nif_filename_with_target()
 
-      Mix.shell().info("No exla binary found locally, trying find one online...")
-
-      case download_binary(tag, libexla_path) do
-        :ok ->
-          Mix.shell().info("Successfully downloaded precompiled exla binary!")
-          Mix.shell().info("Altering exla Makefile to avoid regular compilation")
-
-          # Replace Makefile, so that a regular compilation doesn't proceed
-          for makefile_name <- ["Makefile", "Makefile.win"] do
-            makefile_path = Path.join(exla_path, makefile_name)
-            File.rename!(makefile_path, makefile_path <> ".original")
-            # Keep an empty Makefile, so that elixir_make doesn't error out
-            File.write!(makefile_path, "noop: ;")
-          end
-
-        :error ->
-          Mix.shell().info("Couldn't find a matching precompiled exla binary.")
-
-          Mix.shell().info(
-            "You can proceed to regular compilation by setting SKIP_EXLA_PRECOMPILED=true environment variable."
-          )
-
-          System.halt()
+      unless network_tool() do
+        exit_with_reason!(
+          "Expected either curl or wget to be available in your system, but neither was found"
+        )
       end
+
+      Mix.shell().info("No exla binary found locally, trying find a precompiled one online. 🕵️")
+
+      filenames =
+        case list_release_files(tag) do
+          {:ok, filenames} ->
+            filenames
+
+          :error ->
+            exit_with_reason!(
+              "No precompiled binaries found for your exla version. " <>
+                "Visit https://github.com/#{@github_repo}/releases for supported versions"
+            )
+        end
+
+      unless expected_filename in filenames do
+        exit_with_reason!(
+          "Found precompiled binaries for your exla version, but none matches your target.\n" <>
+            "  Expected: #{expected_filename}\n" <>
+            "  Found: #{Enum.join(filenames, ", ")}\n" <>
+            "If it is ERTS version mismatch, you can just update Erlang/OTP locally."
+        )
+      end
+
+      Mix.shell().info("Found a matching binary, going to download it. 🚀")
+
+      if download_release_file(tag, expected_filename, libexla_path) == :error do
+        exit_with_reason!("Failed to download the binary.")
+      end
+
+      Mix.shell().info("Successfully downloaded the binary! 🐈")
+
+      Mix.shell().info("Altering exla Makefile to avoid regular compilation. 📝")
+      neutralize_makefile!(exla_path)
+
+      Mix.shell().info("You are all set! 🚢")
     end
+  end
+
+  defp exit_with_reason!(message) do
+    Mix.shell().info(message)
+
+    Mix.shell().info(
+      "You can also proceed to regular compilation by setting SKIP_EXLA_PRECOMPILED=true environment variable."
+    )
+
+    System.halt()
   end
 
   defp release_tag_for_project(project_path) do
@@ -102,28 +132,6 @@ defmodule ExlaPrecompiled.MixProject do
     {sha, 0} = System.shell("git rev-parse HEAD", cd: exla_path)
     String.trim(sha)
   end
-
-  defp download_binary(tag, destination_path) do
-    repo = "jonatanklosko/exla_precompiled"
-    url = "https://github.com/#{repo}/releases/download/#{tag}/#{nif_filename_with_target()}"
-    File.mkdir_p!(Path.dirname(destination_path))
-    download(url, destination_path)
-  end
-
-  defp download(url, dest) do
-    command =
-      cond do
-        executable_exists?("curl") -> "curl --fail -L #{url} -o #{dest}"
-        executable_exists?("wget") -> "wget -O #{dest} #{url}"
-      end
-
-    case System.shell(command) do
-      {_, 0} -> :ok
-      _ -> :error
-    end
-  end
-
-  defp executable_exists?(name), do: System.find_executable(name) != nil
 
   defp nif_filename() do
     "libexla.#{nif_ext()}"
@@ -156,4 +164,68 @@ defmodule ExlaPrecompiled.MixProject do
 
     "#{cpu}-#{os}-erts-#{erts_version}"
   end
+
+  defp neutralize_makefile!(exla_path) do
+    # Replace Makefile, so that a regular compilation doesn't proceed
+    for makefile_name <- ["Makefile", "Makefile.win"] do
+      makefile_path = Path.join(exla_path, makefile_name)
+      File.rename!(makefile_path, makefile_path <> ".original")
+      # Keep an empty Makefile, so that elixir_make doesn't error out
+      File.write!(makefile_path, "noop: ;")
+    end
+  end
+
+  # Requests
+
+  defp list_release_files(tag) do
+    url = "https://api.github.com/repos/#{@github_repo}/releases/tags/#{tag}"
+
+    with {:ok, body} <- get(url) do
+      # We don't have a JSON library available here, so we do
+      # a simple matching
+      {:ok, Regex.scan(~r/"name":\s+"(.*\.(?:so|ddl))"/, body) |> Enum.map(&Enum.at(&1, 1))}
+    end
+  end
+
+  defp download_release_file(tag, filename, destination_path) do
+    url = "https://github.com/#{@github_repo}/releases/download/#{tag}/#{filename}"
+    File.mkdir_p!(Path.dirname(destination_path))
+    download(url, destination_path)
+  end
+
+  defp download(url, dest) do
+    command =
+      case network_tool() do
+        :curl -> "curl --fail -L #{url} -o #{dest}"
+        :wget -> "wget -O #{dest} #{url}"
+      end
+
+    case System.shell(command) do
+      {_, 0} -> :ok
+      _ -> :error
+    end
+  end
+
+  defp get(url) do
+    command =
+      case network_tool() do
+        :curl -> "curl --fail --silent -L #{url}"
+        :wget -> "wget -q -O - #{url}"
+      end
+
+    case System.shell(command) do
+      {body, 0} -> {:ok, body}
+      _ -> :error
+    end
+  end
+
+  defp network_tool() do
+    cond do
+      executable_exists?("curl") -> :curl
+      executable_exists?("wget") -> :wget
+      true -> nil
+    end
+  end
+
+  defp executable_exists?(name), do: System.find_executable(name) != nil
 end
