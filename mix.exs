@@ -70,7 +70,7 @@ defmodule ExlaPrecompiled.MixProject do
 
       unless network_tool() do
         exit_with_reason!(
-          "Expected either curl or wget to be available in your system, but neither was found"
+          "Expected either curl or wget to be available in your system, but neither was found."
         )
       end
 
@@ -84,7 +84,7 @@ defmodule ExlaPrecompiled.MixProject do
           :error ->
             exit_with_reason!(
               "No precompiled binaries found for your exla version. " <>
-                "Visit https://github.com/#{@github_repo}/releases for supported versions"
+                "Visit https://github.com/#{@github_repo}/releases for supported versions."
             )
         end
 
@@ -112,6 +112,15 @@ defmodule ExlaPrecompiled.MixProject do
     end
   end
 
+  defmodule InitError do
+    defexception [:message]
+
+    @impl true
+    def blame(error, _stacktrace) do
+      {error, []}
+    end
+  end
+
   defp exit_with_reason!(message) do
     Mix.shell().info(message)
 
@@ -119,7 +128,7 @@ defmodule ExlaPrecompiled.MixProject do
       "You can also proceed to regular compilation by setting SKIP_EXLA_PRECOMPILED=true environment variable."
     )
 
-    System.halt()
+    raise InitError, "exla_precompiled aborted, see the output for more details"
   end
 
   defp release_tag_for_project(project_path) do
