@@ -180,7 +180,7 @@ defmodule ExlaPrecompiled.MixProject do
       makefile_path = Path.join(exla_path, makefile_name)
       File.rename!(makefile_path, makefile_path <> ".original")
       # Keep an empty Makefile, so that elixir_make doesn't error out
-      File.write!(makefile_path, "noop: ;")
+      File.write!(makefile_path, "noop:\n\t@echo -n ''")
     end
   end
 
