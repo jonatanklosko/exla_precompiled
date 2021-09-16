@@ -128,6 +128,11 @@ defmodule ExlaPrecompiled.MixProject do
       "You can also proceed to regular compilation by setting SKIP_EXLA_PRECOMPILED=true environment variable."
     )
 
+    Mix.shell().info(
+      "NOTE: a more robust solution has been integrated upstream and EXLA now uses" <>
+        " precompiled XLA binaries by default, so you no longer need exla_precompiled"
+    )
+
     raise InitError, "exla_precompiled aborted, see the output for more details"
   end
 

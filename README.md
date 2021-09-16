@@ -1,8 +1,8 @@
 # EXLA precompiled
 
-> **Disclaimer:** this project is an experiment attempting to ease
-> local development and speed up getting started with EXLA. It shouldn't
-> be considered a production-oriented solution.
+> ⚠️ **Important:** a more robust solution has been integrated upstream and
+> EXLA now uses precompiled XLA binaries by default, so this is no longer
+> needed.
 
 Precompiled [EXLA](https://github.com/elixir-nx/nx/tree/main/exla) binaries
 for common targets.
